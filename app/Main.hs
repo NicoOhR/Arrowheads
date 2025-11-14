@@ -5,7 +5,7 @@ import Numeric.LinearAlgebra
 -- n, m, width, length
 data Dimensions = Dimensions Int Int Int Int
 -- Cost function type signature, TODO needs to accept vector argument
-type Cost = Double -> Double -> Double
+type Cost = Vector Double -> Vector Double -> Double
 -- Activation function type signature
 type Activation = Double -> Double
 -- Model parameters W_i, b_i
@@ -16,16 +16,25 @@ data Network = Network Dimensions Theta Cost Activation
 relu :: Activation
 relu x = if x > 0 then x else 0 
 
-euclidean :: Cost 
-euclidean x y = ((x - y)**2)
+relu' :: Activation 
+relu' x = if x > 0 then 1 else 0
 
+euclidean :: Cost 
+euclidean x y = ((x - y) <.> (x -y))
+
+grad_euclidean :: Vector Double -> Vector Double -> Vector Double
+grad_euclidean x y = 2 * (x - y)
+
+-- need to track this intermediate z with writer monad
 forward :: Network -> Vector Double -> Vector Double
 forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts where 
     iter x (w, b) = cmap f (w #> x + b)
 
--- computed value -> actual value -> 
+-- computed value -> actual value
 backprop :: Vector Double -> Vector Double -> Network -> Theta
-backprop y_hat y (Network _ (Theta ts) c f) = 
+backprop y_hat y (Network _ (Theta ts) c f) = grad
+  where 
+    delta_L = grad_euclidean * cmap relu' 
 
 main :: IO ()
 main = do
