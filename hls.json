@@ -1,0 +1,11 @@
+{
+  "haskell": {
+    "checkProject": false,
+    "checkParents": "CheckOnSave",
+    "plugin": {
+      "importLens":   { "globalOn": false },
+      "explicitFields": { "globalOn": false }
+    }
+  }
+}
+
