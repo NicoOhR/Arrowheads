@@ -67,10 +67,7 @@ executable arrowheads
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.18.3 && <5, hmatrix
-
-                
-
+    build-depends:    base ^>=4.18.3 && <5, hmatrix, dlist, mtl
 
     -- Directories containing source files.
     hs-source-dirs:   app

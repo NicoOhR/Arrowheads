@@ -1,7 +1,9 @@
 module Main where
 import Numeric.LinearAlgebra.Data
 import Numeric.LinearAlgebra
-
+import qualified Data.DList as DL
+import Control.Monad.Writer
+import Control.Monad (foldM)
 -- n, m, width, length
 data Dimensions = Dimensions Int Int Int Int
 -- Cost function type signature, TODO needs to accept vector argument
@@ -30,11 +32,23 @@ forward :: Network -> Vector Double -> Vector Double
 forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts where 
     iter x (w, b) = cmap f (w #> x + b)
 
+forward_intermediate :: Network 
+                     -> Vector Double 
+                     -> Writer (DL.DList (Vector Double)) (Vector Double)
+forward_intermediate (Network _ (Theta ts) _ f) x1 = foldM (iter) x1 ts
+    where 
+      iter :: Vector Double 
+           -> (Matrix Double, Vector Double) 
+           -> Writer (DL.DList (Vector Double)) (Vector Double)
+      iter x (w, b) = do 
+        let z = cmap f (w #> x + b)
+        writer (z, DL.singleton(z))
+
 -- computed value -> actual value
-backprop :: Vector Double -> Vector Double -> Network -> Theta
-backprop y_hat y (Network _ (Theta ts) c f) = grad
-  where 
-    delta_L = grad_euclidean * cmap relu' 
+-- backprop :: Vector Double -> Vector Double -> Network -> Theta
+-- backprop y_hat y (Network _ (Theta ts) c f) = grad
+--   where 
+--     delta_L = grad_euclidean * cmap relu' 
 
 main :: IO ()
 main = do
@@ -55,7 +69,7 @@ main = do
 
       xInput = fromList [1.0, -2.0]
 
-      output = forward net xInput
+      output = forward_intermediate net xInput
 
   putStrLn "Input vector:"
   print xInput
