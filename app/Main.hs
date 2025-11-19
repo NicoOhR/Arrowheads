@@ -1,4 +1,5 @@
 module Main where
+import Debug.Trace (trace, traceShow, traceShowId)
 import Numeric.LinearAlgebra.Data
 import Numeric.LinearAlgebra
 import qualified Data.DList as DL
@@ -27,15 +28,14 @@ euclidean x y = ((x - y) <.> (x -y))
 grad_euclidean :: Vector Double -> Vector Double -> Vector Double
 grad_euclidean x y = 2 * (x - y)
 
--- need to track this intermediate z with writer monad
 forward :: Network -> Vector Double -> Vector Double
 forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts where 
     iter x (w, b) = cmap f (w #> x + b)
 
-forward_intermediate :: Network 
+forwardW :: Network 
                      -> Vector Double 
                      -> Writer (DL.DList (Vector Double)) (Vector Double)
-forward_intermediate (Network _ (Theta ts) _ f) x1 = foldM (iter) x1 ts
+forwardW (Network _ (Theta ts) _ f) x1 = foldM (iter) x1 ts
     where 
       iter :: Vector Double 
            -> (Matrix Double, Vector Double) 
@@ -44,11 +44,18 @@ forward_intermediate (Network _ (Theta ts) _ f) x1 = foldM (iter) x1 ts
         let z = cmap f (w #> x + b)
         writer (z, DL.singleton(z))
 
--- computed value -> actual value
 -- backprop :: Vector Double -> Vector Double -> Network -> Theta
--- backprop y_hat y (Network _ (Theta ts) c f) = grad
---   where 
---     delta_L = grad_euclidean * cmap relu' 
+backprop :: Vector Double -> Vector Double -> Network -> [Vector Double]
+backprop x y (Network dims (Theta ts) cost f) =
+  let
+    (y_hat, zs) = runWriter (forwardW (Network dims (Theta ts) cost f) x)
+    active = map (cmap relu') (DL.toList zs)
+    deltaL = (grad_euclidean y_hat y) * last active
+    deltas = scanr go deltaL (zip (tail ts) (init active))
+    go :: ((Matrix Double, Vector Double), Vector Double) -> Vector Double -> Vector Double
+    go ((w,_),z) d = (tr w #> d) * z
+   in 
+     deltas 
 
 main :: IO ()
 main = do
@@ -58,7 +65,7 @@ main = do
         ]
       b1 = fromList [0.1, (-0.2)]
       w2 = (2 >< 2)
-        [ 1.0, 1.0
+        [ 1.0, 0.0
         , 0.0, 1.0
         ]
       b2 = fromList [0.0, 0.3]
@@ -69,10 +76,13 @@ main = do
 
       xInput = fromList [1.0, -2.0]
 
-      output = forward_intermediate net xInput
+      output = forwardW net xInput
+      
+      g = backprop xInput xInput net
+  putStr ("output" ++ show g)
 
-  putStrLn "Input vector:"
-  print xInput
-
-  putStrLn "Network output:"
-  print output
+  -- putStrLn "Input vector:"
+  -- print xInput
+  --
+  -- putStrLn "Network output:"
+  -- print output
