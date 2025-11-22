@@ -1,4 +1,5 @@
 module Main where
+import Prelude hiding ((<>))
 import Debug.Trace (trace, traceShow, traceShowId)
 import Numeric.LinearAlgebra.Data
 import Numeric.LinearAlgebra
@@ -14,48 +15,51 @@ type Activation = Double -> Double
 -- Model parameters W_i, b_i
 data Theta = Theta [(Matrix Double, Vector Double)]
 
-data Network = Network Dimensions Theta Cost Activation 
+data Network = Network Dimensions Theta Cost Activation
 
 relu :: Activation
-relu x = if x > 0 then x else 0 
+relu x = if x > 0 then x else 0
 
-relu' :: Activation 
+relu' :: Activation
 relu' x = if x > 0 then 1 else 0
 
-euclidean :: Cost 
+euclidean :: Cost
 euclidean x y = ((x - y) <.> (x -y))
 
 grad_euclidean :: Vector Double -> Vector Double -> Vector Double
 grad_euclidean x y = 2 * (x - y)
 
 forward :: Network -> Vector Double -> Vector Double
-forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts where 
+forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts where
     iter x (w, b) = cmap f (w #> x + b)
 
-forwardW :: Network 
-                     -> Vector Double 
+forwardW :: Network
+                     -> Vector Double
                      -> Writer (DL.DList (Vector Double)) (Vector Double)
 forwardW (Network _ (Theta ts) _ f) x1 = foldM (iter) x1 ts
-    where 
-      iter :: Vector Double 
-           -> (Matrix Double, Vector Double) 
+    where
+      iter :: Vector Double
+           -> (Matrix Double, Vector Double)
            -> Writer (DL.DList (Vector Double)) (Vector Double)
-      iter x (w, b) = do 
+      iter x (w, b) = do
         let z = cmap f (w #> x + b)
-        writer (z, DL.singleton(z))
+        writer (z, DL.singleton z)
 
--- backprop :: Vector Double -> Vector Double -> Network -> Theta
-backprop :: Vector Double -> Vector Double -> Network -> [Vector Double]
+backprop :: Vector Double -> Vector Double -> Network -> Theta
 backprop x y (Network dims (Theta ts) cost f) =
   let
     (y_hat, zs) = runWriter (forwardW (Network dims (Theta ts) cost f) x)
     active = map (cmap relu') (DL.toList zs)
-    deltaL = (grad_euclidean y_hat y) * last active
+    deltaL = grad_euclidean y_hat y * last active
     deltas = scanr go deltaL (zip (tail ts) (init active))
     go :: ((Matrix Double, Vector Double), Vector Double) -> Vector Double -> Vector Double
     go ((w,_),z) d = (tr w #> d) * z
-   in 
-     deltas 
+    gradw = zipWith (\a d -> asColumn d <> asRow a) active deltas
+   in
+    Theta (zip gradw deltas)
+
+sumThetas :: Theta -> Theta -> Theta
+sumThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x + u, y + v)) ts gs)
 
 main :: IO ()
 main = do
@@ -77,7 +81,7 @@ main = do
       xInput = fromList [1.0, -2.0]
 
       output = forwardW net xInput
-      
+
       g = backprop xInput xInput net
   putStr ("output" ++ show g)
 
