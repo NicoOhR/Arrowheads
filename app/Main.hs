@@ -29,7 +29,7 @@ sumThetas :: Theta -> Theta -> Theta
 sumThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x + u, y + v)) ts gs)
 
 relu :: Activation
-relu x = if x > 0 then x else 0
+relu x = max x 0
 
 relu' :: Activation
 relu' x = if x > 0 then 1 else 0
@@ -37,8 +37,8 @@ relu' x = if x > 0 then 1 else 0
 euclidean :: Cost
 euclidean x y = ((x - y) <.> (x - y))
 
-grad_euclidean :: Vector Double -> Vector Double -> Vector Double
-grad_euclidean x y = 2 * (x - y)
+gradEuclidean :: Vector Double -> Vector Double -> Vector Double
+gradEuclidean x y = 2 * (x - y)
 
 forward :: Network -> Vector Double -> Vector Double
 forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts
@@ -64,13 +64,22 @@ backprop x y (Network dims (Theta ts) cost f) =
     let
         (y_hat, zs) = runWriter (forwardW (Network dims (Theta ts) cost f) x)
         active = map (cmap relu') (DL.toList zs)
-        deltaL = grad_euclidean y_hat y * last active
+        activePrev = x : init active
+        deltaL = gradEuclidean y_hat y * last active
         deltas = scanr go deltaL (zip (tail ts) (init active))
         go :: ((Matrix Double, Vector Double), Vector Double) -> Vector Double -> Vector Double
         go ((w, _), z) d = (tr w #> d) * z
-        gradw = zipWith (\a d -> asColumn d <> asRow a) active deltas
+        gradw = zipWith (\a d -> asColumn d <> asRow a) activePrev deltas
      in
         Theta (zip gradw deltas)
+
+train :: Network -> [(Vector Double, Vector Double)] -> Network
+train network ts = go network ts
+  where
+    go nn [] = nn
+    go (Network d (Theta theta) cost f) ((y_hat, y) : ys) = go (Network d iterated cost f) ys
+      where
+        iterated = sumThetas (Theta theta) (backprop y_hat y (Network d (Theta theta) cost f))
 
 main :: IO ()
 main = do
@@ -88,13 +97,23 @@ main = do
                 , 1.0
                 ]
         b2 = fromList [0.0, 0.3]
-
-        theta = Theta [(w1, b1), (w2, b2)]
+        w3 =
+            (1 >< 2)
+                [ 0.5
+                , 0.5
+                ]
+        b3 = fromList [0.0]
+        theta = Theta [(w1, b1), (w2, b2), (w3, b3)]
         dims = Dimensions 2 2 2 2
         net = Network dims theta euclidean relu
 
         xInput = fromList [1.0]
 
         output = forwardW net xInput
-        grad = backprop xInput xInput net
-    print grad
+        grad = backprop xInput (fromList [2.0]) net
+        training_x = map (fromList . (\x -> [x])) [0, 0.05 .. 2 * pi]
+        training_y = map (fromList . (\x -> [x]) . sin) [0, 0.05 .. 2 * pi]
+        training = zip training_x training_y
+        (Network _ (Theta s) _ _) = train net training
+    -- test = forwardW trained (pi / 4)
+    print s
