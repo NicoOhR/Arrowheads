@@ -46,11 +46,6 @@ euclidean x y = ((x - y) <.> (x - y))
 gradEuclidean :: Vector Double -> Vector Double -> Vector Double
 gradEuclidean x y = 2 * (x - y)
 
--- forward :: Network -> Vector Double -> Vector Double
--- forward (Network _ (Theta ts) _ f) x1 = foldl (iter) x1 ts
---   where
---     iter x (w, b) = cmap f (w #> x + b)
-
 forwardW ::
     Network ->
     Vector Double ->
@@ -106,35 +101,54 @@ xorDataRepeated k = concat (replicate k xorData)
 main :: IO ()
 main = do
     let w1 =
-            (2 >< 2)
+            (3 >< 2)
                 [ 1.0
                 , -0.5
                 , 1.0
                 , 0.5
-                ]
-        b1 = fromList [0.1, (-0.2)]
-        w2 =
-            (2 >< 2)
-                [ 1.0
-                , 0.0
-                , 0.0
                 , 1.0
-                ]
-        b2 = fromList [0.0, 0.3]
-        w3 =
-            (1 >< 2)
-                [ 0.5
                 , 0.5
                 ]
-        b3 = fromList [0.0]
-        theta = Theta [(w1, b1), (w2, b2), (w3, b3)]
+        b1 = fromList [0.1, (-0.2), 0.1]
+        w2 =
+            (3 >< 3)
+                [ 1.0
+                , 0.5
+                , 0.5
+                , 1.0
+                , -1.0
+                , 0.1
+                , 0.6
+                , -1.0
+                , 0.1
+                , 0.6
+                ]
+        b2 = fromList [0.2, 0.3, 0.1]
+        w3 =
+            (3 >< 3)
+                [ 1.0
+                , 0.5
+                , 0.5
+                , 1.0
+                , -1.0
+                , 0.1
+                , 0.6
+                , -1.0
+                , 0.1
+                , 0.6
+                ]
+        b3 = fromList [0.2, 0.3, 0.1]
+        w4 =
+            (1 >< 3)
+                [ 0.5
+                , 0.5
+                , -0.3
+                ]
+        b4 = fromList [0.0]
+        theta = Theta [(w1, b1), (w2, b2), (w3, b3), (w4, b4)]
         dims = Dimensions 2 2 2 2
         net = Network dims theta euclidean relu
 
-        xInput = fromList [1.0]
-
-        output = forwardW net xInput
-        grad = backprop xInput (fromList [2.0]) net
         trained = train net (xorDataRepeated 1000)
-        test = forwardW trained (fromList [1, 0])
+        test = forwardW trained (fromList [1, 1])
     print test
