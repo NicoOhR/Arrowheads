@@ -1,15 +1,14 @@
+{-# HLINT ignore "Redundant bracket" #-}
+{-# LANGUAGE GADTs #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Redundant bracket" #-}
 module Main where
 
 import Control.Monad (foldM)
 import Control.Monad.Writer
+import Data.Bifunctor
 import qualified Data.DList as DL
-import Debug.Trace (trace, traceShow, traceShowId)
 import Numeric.LinearAlgebra
-import Numeric.LinearAlgebra.Data
-import Numeric.LinearAlgebra.Static (dim)
 import System.Random
 import Prelude hiding ((<>))
 
@@ -23,7 +22,9 @@ type Cost = Vector Double -> Vector Double -> Double
 type Activation = Double -> Double
 
 -- Model parameters W_i, b_i
-data Theta = Theta [(Matrix Double, Vector Double)] deriving (Show)
+data Theta where
+    Theta :: [(Matrix Double, Vector Double)] -> Theta
+    deriving (Show)
 
 data Network = Network Theta Cost Activation
 
@@ -35,7 +36,7 @@ subtractThetas :: Theta -> Theta -> Theta
 subtractThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x - u, y - v)) ts gs)
 
 scaleThetas :: Theta -> Double -> Theta
-scaleThetas (Theta ts) eta = Theta (fmap (\(x, y) -> (scale eta x, scale eta y)) ts)
+scaleThetas (Theta ts) eta = Theta (fmap (bimap (scale eta) (scale eta)) ts)
 
 relu :: Activation
 relu x = max x 0
@@ -83,10 +84,10 @@ backprop x y (Network (Theta ts) cost f) =
         Theta (zip gradw deltas)
 
 initNetwork :: (RandomGen g) => Dimensions -> g -> Theta
-initNetwork (Dimensions n m width len) gen = Theta ([first] ++ hidden ++ [output])
+initNetwork (Dimensions n m width len) gen = Theta ([input] ++ hidden ++ [output])
   where
     getList t = take t $ uniformRs (-1.0 :: Double, 1.0 :: Double) gen
-    first = ((width >< n) $ getList (n * width), fromList $ getList width) -- n x width
+    input = ((width >< n) $ getList (n * width), fromList $ getList width) -- n x width
     hidden = replicate len ((width >< width) $ getList (width * width), fromList $ getList width) -- width x width length times
     output = ((m >< width) $ getList (m * width), fromList $ getList m) -- width x n
 
