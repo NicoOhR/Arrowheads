@@ -9,6 +9,8 @@ import qualified Data.DList as DL
 import Debug.Trace (trace, traceShow, traceShowId)
 import Numeric.LinearAlgebra
 import Numeric.LinearAlgebra.Data
+import Numeric.LinearAlgebra.Static (dim)
+import System.Random
 import Prelude hiding ((<>))
 
 -- n, m, width, length
@@ -23,8 +25,9 @@ type Activation = Double -> Double
 -- Model parameters W_i, b_i
 data Theta = Theta [(Matrix Double, Vector Double)] deriving (Show)
 
-data Network = Network Dimensions Theta Cost Activation
+data Network = Network Theta Cost Activation
 
+-- need to implement a vector space typeclass for this
 sumThetas :: Theta -> Theta -> Theta
 sumThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x + u, y + v)) ts gs)
 
@@ -50,24 +53,24 @@ forwardW ::
     Network ->
     Vector Double ->
     Writer (DL.DList (Vector Double)) (Vector Double)
-forwardW (Network _ (Theta ts) _ f) x1 = do
+forwardW (Network (Theta ts) _ f) x1 = do
     let (hiddenLayer, lastLayer) = (init ts, last ts)
-    h <- foldM step x1 hiddenLayer
+    h <- foldM go x1 hiddenLayer
     let (wL, bL) = lastLayer
         y_hat = wL #> h + bL
     tell (DL.singleton y_hat)
     pure y_hat
   where
-    step :: Vector Double -> (Matrix Double, Vector Double) -> Writer (DL.DList (Vector Double)) (Vector Double)
-    step x (w, b) = do
+    go :: Vector Double -> (Matrix Double, Vector Double) -> Writer (DL.DList (Vector Double)) (Vector Double)
+    go x (w, b) = do
         let z = cmap f (w #> x + b)
         tell (DL.singleton z)
         pure z
 
 backprop :: Vector Double -> Vector Double -> Network -> Theta
-backprop x y (Network dims (Theta ts) cost f) =
+backprop x y (Network (Theta ts) cost f) =
     let
-        (y_hat, zsD) = runWriter (forwardW (Network dims (Theta ts) cost f) x)
+        (y_hat, zsD) = runWriter (forwardW (Network (Theta ts) cost f) x)
         as = DL.toList zsD -- [a1, a2 .., aL]
         activations = init (x : as) -- [a0, a1, a2 ... a(L-1)]
         derivatives = map (cmap relu') (init as) -- [f'(a1), f'(a2)..., f'(aL-1)]
@@ -79,13 +82,19 @@ backprop x y (Network dims (Theta ts) cost f) =
      in
         Theta (zip gradw deltas)
 
-train :: Network -> [(Vector Double, Vector Double)] -> Network
-train network ts = go network ts
+initNetwork :: (RandomGen g) => Dimensions -> g -> Theta
+initNetwork (Dimensions n m width len) gen = Theta ([first] ++ hidden ++ [output])
   where
-    go nn [] = nn
-    go (Network d (Theta theta) cost f) ((x, y) : ys) = go (Network d iterated cost f) ys
-      where
-        iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network d (Theta theta) cost f)) 0.01)
+    getList t = take t $ uniformRs (-1.0 :: Double, 1.0 :: Double) gen
+    first = ((width >< n) $ getList (n * width), fromList $ getList width) -- n x width
+    hidden = replicate len ((width >< width) $ getList (width * width), fromList $ getList width) -- width x width length times
+    output = ((m >< width) $ getList (m * width), fromList $ getList m) -- width x n
+
+train :: Network -> [(Vector Double, Vector Double)] -> Network
+train nn [] = nn
+train (Network (Theta theta) cost f) ((x, y) : ys) = train (Network iterated cost f) ys
+  where
+    iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network (Theta theta) cost f)) 0.01)
 
 xorData :: [(Vector Double, Vector Double)]
 xorData =
@@ -100,55 +109,11 @@ xorDataRepeated k = concat (replicate k xorData)
 
 main :: IO ()
 main = do
-    let w1 =
-            (3 >< 2)
-                [ 1.0
-                , -0.5
-                , 1.0
-                , 0.5
-                , 1.0
-                , 0.5
-                ]
-        b1 = fromList [0.1, (-0.2), 0.1]
-        w2 =
-            (3 >< 3)
-                [ 1.0
-                , 0.5
-                , 0.5
-                , 1.0
-                , -1.0
-                , 0.1
-                , 0.6
-                , -1.0
-                , 0.1
-                , 0.6
-                ]
-        b2 = fromList [0.2, 0.3, 0.1]
-        w3 =
-            (3 >< 3)
-                [ 1.0
-                , 0.5
-                , 0.5
-                , 1.0
-                , -1.0
-                , 0.1
-                , 0.6
-                , -1.0
-                , 0.1
-                , 0.6
-                ]
-        b3 = fromList [0.2, 0.3, 0.1]
-        w4 =
-            (1 >< 3)
-                [ 0.5
-                , 0.5
-                , -0.3
-                ]
-        b4 = fromList [0.0]
-        theta = Theta [(w1, b1), (w2, b2), (w3, b3), (w4, b4)]
-        dims = Dimensions 2 2 2 2
-        net = Network dims theta euclidean relu
-
+    let
+        gen = mkStdGen 10
+        dims = Dimensions 2 1 3 3
+        theta = initNetwork dims gen
+        net = Network theta euclidean relu
         trained = train net (xorDataRepeated 1000)
         test = forwardW trained (fromList [1, 1])
     print test
