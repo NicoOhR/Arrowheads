@@ -1,4 +1,3 @@
-{-# HLINT ignore "Redundant bracket" #-}
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -15,8 +14,8 @@ import Prelude hiding ((<>))
 -- n, m, width, length
 data Dimensions = Dimensions Int Int Int Int
 
--- Cost function type signature, TODO needs to accept vector argument
-type Cost = Vector Double -> Vector Double -> Double
+-- Cost function type signature
+type GradCost = Vector Double -> Vector Double -> Vector Double
 
 -- Activation function type signature
 type Activation = Double -> Double
@@ -26,7 +25,8 @@ data Theta where
     Theta :: [(Matrix Double, Vector Double)] -> Theta
     deriving (Show)
 
-data Network = Network Theta Cost Activation
+-- Parameters, Cost derivative, Activation, Activation derivative
+data Network = Network Theta GradCost Activation Activation
 
 -- need to implement a vector space typeclass for this
 sumThetas :: Theta -> Theta -> Theta
@@ -44,17 +44,14 @@ relu x = max x 0
 relu' :: Activation
 relu' x = if x > 0 then 1 else 0
 
-euclidean :: Cost
-euclidean x y = ((x - y) <.> (x - y))
-
-gradEuclidean :: Vector Double -> Vector Double -> Vector Double
+gradEuclidean :: GradCost
 gradEuclidean x y = 2 * (x - y)
 
 forwardW ::
     Network ->
     Vector Double ->
     Writer (DL.DList (Vector Double)) (Vector Double)
-forwardW (Network (Theta ts) _ f) x1 = do
+forwardW (Network (Theta ts) _ f _) x1 = do
     let (hiddenLayer, lastLayer) = (init ts, last ts)
     h <- foldM go x1 hiddenLayer
     let (wL, bL) = lastLayer
@@ -69,17 +66,17 @@ forwardW (Network (Theta ts) _ f) x1 = do
         pure z
 
 backprop :: Vector Double -> Vector Double -> Network -> Theta
-backprop x y (Network (Theta ts) cost f) =
+backprop x y (Network (Theta ts) c' f f') =
     let
-        (y_hat, zsD) = runWriter (forwardW (Network (Theta ts) cost f) x)
+        (y_hat, zsD) = runWriter (forwardW (Network (Theta ts) c' f f') x)
         as = DL.toList zsD -- [a1, a2 .., aL]
         activations = init (x : as) -- [a0, a1, a2 ... a(L-1)]
-        derivatives = map (cmap relu') (init as) -- [f'(a1), f'(a2)..., f'(aL-1)]
-        deltaL = gradEuclidean y_hat y
-        deltas = scanr go deltaL (zip (tail ts) (derivatives)) -- [((w2, b2), f'(a1))...]
+        derivatives = map (cmap f') (init as) -- [f'(a1), f'(a2)..., f'(aL-1)]
+        deltaL = c' y_hat y
+        deltas = scanr go deltaL (zip (tail ts) derivatives) -- [((w2, b2), f'(a1))...]
         go :: ((Matrix Double, Vector Double), Vector Double) -> Vector Double -> Vector Double
         go ((w, _), z) d = (tr w #> d) * z
-        gradw = zipWith (\a d -> asColumn d <> asRow a) (activations) deltas
+        gradw = zipWith (\a d -> asColumn d <> asRow a) activations deltas
      in
         Theta (zip gradw deltas)
 
@@ -93,9 +90,9 @@ initNetwork (Dimensions n m width len) gen = Theta ([input] ++ hidden ++ [output
 
 train :: Network -> [(Vector Double, Vector Double)] -> Network
 train nn [] = nn
-train (Network (Theta theta) cost f) ((x, y) : ys) = train (Network iterated cost f) ys
+train (Network (Theta theta) c' f f') ((x, y) : ys) = train (Network iterated c' f f') ys
   where
-    iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network (Theta theta) cost f)) 0.01)
+    iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network (Theta theta) c' f f')) 0.001)
 
 xorData :: [(Vector Double, Vector Double)]
 xorData =
@@ -108,13 +105,19 @@ xorData =
 xorDataRepeated :: Int -> [(Vector Double, Vector Double)]
 xorDataRepeated k = concat (replicate k xorData)
 
+sinData :: (RandomGen g) => Int -> g -> [(Vector Double, Vector Double)]
+sinData k gen = zip x y
+  where
+    x = fmap scalar $ take k $ uniformRs (0 :: Double, 2 * pi :: Double) gen
+    y = fmap sin x
+
 main :: IO ()
 main = do
     let
         gen = mkStdGen 10
-        dims = Dimensions 2 1 3 3
+        dims = Dimensions 1 1 5 5
         theta = initNetwork dims gen
-        net = Network theta euclidean relu
-        trained = train net (xorDataRepeated 1000)
-        test = forwardW trained (fromList [1, 1])
+        net = Network theta gradEuclidean relu relu'
+        trained = train net (sinData 100000 gen)
+        test = forwardW trained (fromList [pi / 6])
     print test
