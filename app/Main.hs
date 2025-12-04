@@ -1,12 +1,16 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Main where
 
 import Control.Monad (foldM)
 import Control.Monad.Writer
+import qualified Data.Aeson as A
 import Data.Bifunctor
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.DList as DL
+import Graphics.Vega.VegaLite hiding (Theta)
 import Numeric.LinearAlgebra
 import System.Random
 import Prelude hiding ((<>))
@@ -92,7 +96,7 @@ train :: Network -> [(Vector Double, Vector Double)] -> Network
 train nn [] = nn
 train (Network (Theta theta) c' f f') ((x, y) : ys) = train (Network iterated c' f f') ys
   where
-    iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network (Theta theta) c' f f')) 0.001)
+    iterated = subtractThetas (Theta theta) (scaleThetas (backprop x y (Network (Theta theta) c' f f')) 0.00001)
 
 xorData :: [(Vector Double, Vector Double)]
 xorData =
@@ -111,13 +115,32 @@ sinData k gen = zip x y
     x = fmap scalar $ take k $ uniformRs (0 :: Double, 2 * pi :: Double) gen
     y = fmap sin x
 
+sinTest :: [(Double, Double)]
+sinTest = zip x y
+  where
+    x = [0, 0.01 .. 2 * pi]
+    y = map sin x
+
 main :: IO ()
 main = do
     let
         gen = mkStdGen 10
-        dims = Dimensions 1 1 5 5
+        dims = Dimensions 1 1 5 7
         theta = initNetwork dims gen
         net = Network theta gradEuclidean relu relu'
         trained = train net (sinData 100000 gen)
-        test = forwardW trained (fromList [pi / 6])
-    print test
+        test = fmap (fst . runWriter . forwardW trained) (map (scalar . fst) sinTest)
+        test_double = zip [0, 0.01 .. 2 * pi] (fmap (! 0) test)
+        dat =
+            dataFromColumns []
+                . dataColumn "x" (Numbers (map fst test_double))
+                . dataColumn "y_hat" (Numbers (map snd test_double))
+                . dataColumn "y" (Numbers (map (sin . fst) test_double))
+        bkg = background "rgba(0,0,0,0.05)"
+        enc = encoding . position X [PName "x", PmType Quantitative] . position Y [PName "y", PmType Quantitative] . color [MName "Origin"]
+        encBase field =
+            encoding
+                . position X [PName "x", PmType Quantitative]
+                . position Y [PName field, PmType Quantitative]
+     in
+        BL.writeFile "output.json" $ A.encode (fromVL $ toVegaLite [bkg, dat [], layer [asSpec [mark Line [MStroke "steelblue"], encBase "y" []], asSpec [mark Line [MStroke "firebrick"], encBase "y_hat" []]], enc []])
