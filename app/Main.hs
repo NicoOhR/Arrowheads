@@ -131,6 +131,8 @@ main = do
         trained = train net (sinData 100000 gen)
         test = fmap (fst . runWriter . forwardW trained) (map (scalar . fst) sinTest)
         test_double = zip [0, 0.01 .. 2 * pi] (fmap (! 0) test)
+        mse_list = fmap (\(x, y) -> (x - y) ** 2) (zip (map snd test_double) (map (sin . fst) test_double))
+        mse = sum mse_list / fromIntegral (length mse_list)
         dat =
             dataFromColumns []
                 . dataColumn "x" (Numbers (map fst test_double))
@@ -142,5 +144,5 @@ main = do
             encoding
                 . position X [PName "x", PmType Quantitative]
                 . position Y [PName field, PmType Quantitative]
-     in
-        BL.writeFile "output.json" $ A.encode (fromVL $ toVegaLite [bkg, dat [], layer [asSpec [mark Line [MStroke "steelblue"], encBase "y" []], asSpec [mark Line [MStroke "firebrick"], encBase "y_hat" []]], enc []])
+    print mse
+    BL.writeFile "output.json" $ A.encode (fromVL $ toVegaLite [bkg, dat [], layer [asSpec [mark Line [MStroke "steelblue"], encBase "y" []], asSpec [mark Line [MStroke "firebrick"], encBase "y_hat" []]], enc []])
