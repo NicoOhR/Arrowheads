@@ -128,21 +128,8 @@ main = do
         dims = Dimensions 1 1 5 7
         theta = initNetwork dims gen
         net = Network theta gradEuclidean relu relu'
-        trained = train net (sinData 100000 gen)
-        test = fmap (fst . runWriter . forwardW trained) (map (scalar . fst) sinTest)
-        test_double = zip [0, 0.01 .. 2 * pi] (fmap (! 0) test)
-        mse_list = fmap (\(x, y) -> (x - y) ** 2) (zip (map snd test_double) (map (sin . fst) test_double))
-        mse = sum mse_list / fromIntegral (length mse_list)
-        dat =
-            dataFromColumns []
-                . dataColumn "x" (Numbers (map fst test_double))
-                . dataColumn "y_hat" (Numbers (map snd test_double))
-                . dataColumn "y" (Numbers (map (sin . fst) test_double))
-        bkg = background "rgba(0,0,0,0.05)"
-        enc = encoding . position X [PName "x", PmType Quantitative] . position Y [PName "y", PmType Quantitative] . color [MName "Origin"]
-        encBase field =
-            encoding
-                . position X [PName "x", PmType Quantitative]
-                . position Y [PName field, PmType Quantitative]
-    print mse
-    BL.writeFile "output.json" $ A.encode (fromVL $ toVegaLite [bkg, dat [], layer [asSpec [mark Line [MStroke "steelblue"], encBase "y" []], asSpec [mark Line [MStroke "firebrick"], encBase "y_hat" []]], enc []])
+        trained = scanl train net (replicate 10 $ sinData 100000 gen)
+        vectorTestList = map (scalar . fst) sinTest
+        tests = map (\n -> map (fst . runWriter . forwardW n) vectorTestList) trained
+        inputResultList = map (zip ([0, 0.01 .. 2 * pi] :: [Double])) (fmap (map (! 0)) tests)
+    writeFile "output.txt" $ show inputResultList
