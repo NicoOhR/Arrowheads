@@ -12,6 +12,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.DList as DL
 import Graphics.Vega.VegaLite hiding (Theta)
 import Numeric.LinearAlgebra
+import System.ProgressBar
 import System.Random
 import Prelude hiding ((<>))
 
@@ -125,11 +126,12 @@ main :: IO ()
 main = do
     let
         gen = mkStdGen 10
-        dims = Dimensions 1 1 5 7
+        dims = Dimensions 1 1 10 10
         theta = initNetwork dims gen
         net = Network theta gradEuclidean relu relu'
-        trained = scanl train net (replicate 10 $ sinData 100000 gen)
-        vectorTestList = map (scalar . fst) sinTest
+        trained = scanl train net (replicate 100 $ scaleInput <$> sinData 30000 gen)
+        vectorTestList = map (scalar . fst) $ scaleInput <$> sinTest
         tests = map (\n -> map (fst . runWriter . forwardW n) vectorTestList) trained
         inputResultList = map (zip ([0, 0.01 .. 2 * pi] :: [Double])) (fmap (map (! 0)) tests)
+        scaleInput (input, test) = (input / (2 * pi), test)
     writeFile "output.txt" $ show inputResultList
