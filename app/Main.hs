@@ -6,18 +6,11 @@ module Main where
 
 import Control.Monad (foldM)
 import Control.Monad.Writer
-import qualified Data.Aeson as A
 import Data.Bifunctor
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.DList as DL
-import Graphics.Vega.VegaLite hiding (Theta)
 import Numeric.LinearAlgebra
-import System.ProgressBar
 import System.Random
 import Prelude hiding ((<>))
-
--- n, m, width, length
-data Dimensions = Dimensions Int Int Int Int
 
 -- Cost function type signature
 type GradCost = Vector Double -> Vector Double -> Vector Double
@@ -85,8 +78,8 @@ backprop x y (Network (Theta ts) c' f f') =
      in
         Theta (zip gradw deltas)
 
-initNetwork :: (RandomGen g) => Dimensions -> g -> Theta
-initNetwork (Dimensions n m width len) gen = Theta ([input] ++ hidden ++ [output])
+initNetwork :: (RandomGen g) => (Int, Int, Int, Int) -> g -> Theta
+initNetwork (n, m, width, len) gen = Theta ([input] ++ hidden ++ [output])
   where
     getList t = take t $ uniformRs (-1.0 :: Double, 1.0 :: Double) gen
     input = ((width >< n) $ getList (n * width), fromList $ getList width) -- n x width
@@ -126,8 +119,7 @@ main :: IO ()
 main = do
     let
         gen = mkStdGen 10
-        dims = Dimensions 1 1 10 10
-        theta = initNetwork dims gen
+        theta = initNetwork (1, 1, 10, 10) gen
         net = Network theta gradEuclidean relu relu'
         trained = scanl train net (replicate 100 $ scaleInput <$> sinData 30000 gen)
         vectorTestList = map (scalar . fst) $ scaleInput <$> sinTest
