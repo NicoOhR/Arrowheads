@@ -20,7 +20,10 @@ import Prelude hiding ((<>))
 type GradCost (n :: Nat) = R n -> R n -> R n
 
 -- Activation function type signature
-type Activation = Double -> Double
+data Activation = Activation {
+  act :: Double -> Double, 
+  act' :: Double -> Double
+                             }
 
 -- Hidden Layer of the Network
 data Layer (i :: Nat) (o :: Nat) where
@@ -43,9 +46,6 @@ instance Category Layers where
   (.) NilLayer ys = ys
   (.) (ConsLayer x xs) ys = ConsLayer x (xs . ys)
 
--- Parameters, Cost derivative, Activation, Activation derivative
-data Network = Network Layers GradCost Activation Activation
-
 zipWithLayers :: (forall i o. Layer i o -> Layer i o-> Layer i o) -> Layers i o -> Layers i o -> Layers i o
 zipWithLayers f (NilLayer l) (NilLayer l') = NilLayer (f l l')
 zipWithLayers f (ConsLayer l rest) (ConsLayer l' rest') = ConsLayer (f l l') )(zipWithLayers f rest rest')
@@ -54,12 +54,11 @@ mapLayer :: (forall i o. Layer i o -> Layer i o) -> Layers i o -> Layers i o
 mapLayer f NilLayer xs = NilLayer (f xs)
 mapLayer f (ConsLayer x xs) = ConsLayer (f x) (mapLayer f xs)
 
+-- Parameters, Cost derivative
+data Network = Network Layers GradCost
 
 relu :: Activation
-relu x = max x 0
-
-relu' :: Activation
-relu' x = if x > 0 then 1 else 0
+relu = Activation (max 0) (\x -> if x > 0 then 1 else 0)
 
 gradEuclidean :: GradCost
 gradEuclidean x y = 2 * (x - y)
