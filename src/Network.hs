@@ -2,11 +2,14 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Network where
 
-import GHC.TypeLits (KnownNat, Nat)
+import Data.Proxy (Proxy (..))
+import GHC.TypeLits (KnownNat, Nat, natVal)
 import Numeric.LinearAlgebra.Static
+import System.Random (mkStdGen, randoms)
 
 -- Cost function type signature
 type GradCost (n :: Nat) = R n -> R n -> R n
@@ -28,9 +31,21 @@ data Layers (i :: Nat) (o :: Nat) where
     NilLayer :: Layer i o -> Layers i o
     ConsLayer :: (KnownNat h) => Layer i h -> Layers h o -> Layers i o
 
+makeLayers :: (KnownNat h) => [Layer h h] -> Layer h o -> Layers h o
+makeLayers ls out = foldr ConsLayer (NilLayer out) ls
+
 mapLayer :: (forall i o. Layer i o -> Layer i o) -> Layers i o -> Layers i o
 mapLayer f (NilLayer l) = NilLayer (f l)
 mapLayer f (ConsLayer l rest) = ConsLayer (f l) (mapLayer f rest)
+
+randLayer :: forall i o. (KnownNat i, KnownNat o) => Int -> Activation -> Layer i o
+randLayer seed a =
+    let vals = map (\x -> 2 * x - 1) . randoms . mkStdGen $ seed :: [Double]
+        ni = fromIntegral (natVal (Proxy :: Proxy i))
+        no = fromIntegral (natVal (Proxy :: Proxy o))
+        w = matrix (take (ni * no) vals)
+        b = vector (take no (drop (ni * no) vals))
+     in Layer w b a
 
 relu :: Activation
 relu = Activation (max 0) (\x -> if x > 0 then 1 else 0)
