@@ -1,40 +1,59 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Main where
 
+import Control.Category
 import Control.Monad (foldM)
 import Control.Monad.Writer
 import Data.Bifunctor
 import qualified Data.DList as DL
-import Numeric.LinearAlgebra
+import GHC.TypeLits (Nat)
+import Numeric.LinearAlgebra.Static
 import System.Random
 import Prelude hiding ((<>))
 
 -- Cost function type signature
-type GradCost = Vector Double -> Vector Double -> Vector Double
+type GradCost (n :: Nat) = R n -> R n -> R n
 
 -- Activation function type signature
 type Activation = Double -> Double
 
--- Model parameters W_i, b_i
-data Theta where
-    Theta :: [(Matrix Double, Vector Double)] -> Theta
-    deriving (Show)
+-- Hidden Layer of the Network
+data Layer (i :: Nat) (o :: Nat) where
+    Layer :: L i o ->  R o -> Activation -> Layer i o
+
+instance (KnownNat i, KnownNat o) => Num (Layer i o) where
+    (Layer w b act) + (Layer w' b' _) = Layer (w + w') (b + b') act
+    (Layer w b act) - (Layer w' b' _) = Layer (w - w') (b - b') act
+
+-- Given a single layer, return the layer
+-- Given a layer and a list (with the output of the first the input of the list)
+-- return a new list with that Layer added
+data Layers (i :: Nat) (o :: Nat) where
+    NilLayer :: Layer i o -> Layers i o
+    ConsLayer :: Layer i h -> Layers h o -> Layers i o
+
+-- Creating a category instance gives us functionality for free
+instance Category Layers where 
+  id = NilLayer,
+  (.) NilLayer ys = ys
+  (.) (ConsLayer x xs) ys = ConsLayer x (xs . ys)
 
 -- Parameters, Cost derivative, Activation, Activation derivative
-data Network = Network Theta GradCost Activation Activation
+data Network = Network Layers GradCost Activation Activation
 
--- need to implement a vector space typeclass for this
-sumThetas :: Theta -> Theta -> Theta
-sumThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x + u, y + v)) ts gs)
+zipWithLayers :: (forall i o. Layer i o -> Layer i o-> Layer i o) -> Layers i o -> Layers i o -> Layers i o
+zipWithLayers f (NilLayer l) (NilLayer l') = NilLayer (f l l')
+zipWithLayers f (ConsLayer l rest) (ConsLayer l' rest') = ConsLayer (f l l') )(zipWithLayers f rest rest')
 
-subtractThetas :: Theta -> Theta -> Theta
-subtractThetas (Theta ts) (Theta gs) = Theta (zipWith (\(x, y) (u, v) -> (x - u, y - v)) ts gs)
+mapLayer :: (forall i o. Layer i o -> Layer i o) -> Layers i o -> Layers i o 
+mapLayer f NilLayer xs = NilLayer (f xs)
+mapLayer f (ConsLayer x xs) = ConsLayer (f x) (mapLayer f xs)
 
-scaleThetas :: Theta -> Double -> Theta
-scaleThetas (Theta ts) eta = Theta (fmap (bimap (scale eta) (scale eta)) ts)
 
 relu :: Activation
 relu x = max x 0
