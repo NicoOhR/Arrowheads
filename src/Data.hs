@@ -33,5 +33,5 @@ sinTest :: [(R 1, R 1)]
 sinTest = zip xs ys
   where
     vals = [0, 0.01 .. 2 * pi]
-    xs   = fmap (vector . pure) vals
+    xs   = fmap ((vector . pure) . (/ (2 * pi))) vals
     ys   = fmap ((vector . pure) . sin) vals
