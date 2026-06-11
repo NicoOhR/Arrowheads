@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
@@ -9,7 +10,8 @@ module Network where
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownNat, Nat, natVal)
 import Numeric.LinearAlgebra.Static
-import System.Random (mkStdGen, randoms)
+import System.IO.Unsafe (unsafePerformIO)
+import System.Random (newStdGen, randoms)
 import Unsafe.Coerce (unsafeCoerce)
 
 -- Cost function type signature
@@ -44,9 +46,24 @@ addLayers (NilLayer l) (NilLayer l') = NilLayer (l + l')
 addLayers (ConsLayer l ls) (ConsLayer l' ls') =
     ConsLayer (l + unsafeCoerce l') (addLayers ls (unsafeCoerce ls'))
 addLayers _ _ = error "addLayers: shape mismatch (impossible if construction is correct)"
-randLayer :: forall i o. (KnownNat i, KnownNat o) => Int -> Activation -> Layer i o
-randLayer seed a =
-    let vals = map (\x -> 2 * x - 1) . randoms . mkStdGen $ seed :: [Double]
+
+class AppendLayer a b result | a b -> result where
+    appendLayer :: a -> b -> result
+
+instance (KnownNat i, KnownNat h) => AppendLayer (Layer i h) (Layers h o) (Layers i o) where
+    appendLayer = ConsLayer
+
+instance (KnownNat i, KnownNat h, KnownNat o) => AppendLayer (Layer i h) (Layer h o) (Layers i o) where
+    appendLayer l l' = ConsLayer l (NilLayer l')
+
+infixr 5 >->
+(>->) :: (AppendLayer a b result) => a -> b -> result
+(>->) = appendLayer
+
+{-# NOINLINE randLayer #-}
+randLayer :: forall i o. (KnownNat i, KnownNat o) => Activation -> Layer i o
+randLayer a =
+    let vals = map (\x -> 2 * x - 1) . randoms . unsafePerformIO $ newStdGen :: [Double]
         ni = fromIntegral (natVal (Proxy :: Proxy i))
         no = fromIntegral (natVal (Proxy :: Proxy o))
         w = matrix (take (ni * no) vals)
