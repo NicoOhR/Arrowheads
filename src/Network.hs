@@ -23,12 +23,18 @@ data Activation = Activation
     , act' :: Double -> Double
     }
 
+data Type = Either "Max" "Average"
+
+data PoolConfig = PoolConfig Int Int Type
+
 data Layer (i :: Nat) (o :: Nat) where
-    Layer :: L o i -> R o -> Activation -> Layer i o
+    Dense :: L o i -> R o -> Activation -> Layer i o
+    Conv :: (KnownNat c, KnownNat k) => L c k -> R o -> Activation -> Layer i o
+    Pool :: PoolConfig -> Layer i o
 
 instance (KnownNat i, KnownNat o) => Num (Layer i o) where
-    (Layer w b a) + (Layer w' b' _) = Layer (w + w') (b + b') a
-    (Layer w b a) - (Layer w' b' _) = Layer (w - w') (b - b') a
+    (Dense w b a) + (Dense w' b' _) = Dense (w + w') (b + b') a
+    (Dense w b a) - (Dense w' b' _) = Dense (w - w') (b - b') a
 
 data Layers (i :: Nat) (o :: Nat) where
     NilLayer :: (KnownNat i, KnownNat o) => Layer i o -> Layers i o
@@ -46,6 +52,10 @@ addLayers (NilLayer l) (NilLayer l') = NilLayer (l + l')
 addLayers (ConsLayer l ls) (ConsLayer l' ls') =
     ConsLayer (l + unsafeCoerce l') (addLayers ls (unsafeCoerce ls'))
 addLayers _ _ = error "addLayers: shape mismatch (impossible if construction is correct)"
+
+scaleLayers :: (KnownNat o) => Double -> Layers i o -> Layers i o
+scaleLayers eta (NilLayer (Dense w b a)) = NilLayer (Layer (dmmap (* eta) w) (dvmap (* eta) b) a)
+scaleLayers eta (ConsLayer (Dense w b a) rest) = ConsLayer (Layer (dmmap (* eta) w) (dvmap (* eta) b) a) (scaleLayers eta rest)
 
 class AppendLayer a b result | a b -> result where
     appendLayer :: a -> b -> result
@@ -79,8 +89,11 @@ linear = Activation id (const 1.0)
 gradEuclidean :: GradCost n
 gradEuclidean x y = 2 * (x - y)
 
+-- Given a Layers i o, and an input of size i, return the ouput vector from this layer as well
+-- as a function which given the delta of the layer in front of it, returns the delta of this layer
+-- and the gradient of this layer
 forward :: (KnownNat i, KnownNat o) => Layers i o -> R i -> (R o, R o -> (R i, Layers i o))
-forward (NilLayer (Layer w b (Activation a a'))) input =
+forward (NilLayer (Dense w b (Activation a a'))) input =
     let z = w #> input + b
      in ( dvmap a z
         , \d ->
@@ -89,7 +102,7 @@ forward (NilLayer (Layer w b (Activation a a'))) input =
                 , NilLayer (Layer (outer delta input) delta (Activation a a'))
                 )
         )
-forward (ConsLayer (Layer w b (Activation a a')) rest) input =
+forward (ConsLayer (Dense w b (Activation a a')) rest) input =
     let z = w #> input + b
         aOut = dvmap a z
         (output, restBack) = forward rest aOut
@@ -102,10 +115,6 @@ forward (ConsLayer (Layer w b (Activation a a')) rest) input =
                 , ConsLayer (Layer (outer deltaZ input) deltaZ (Activation a a')) restGrad
                 )
         )
-
-scaleLayers :: (KnownNat o) => Double -> Layers i o -> Layers i o
-scaleLayers eta (NilLayer (Layer w b a)) = NilLayer (Layer (dmmap (* eta) w) (dvmap (* eta) b) a)
-scaleLayers eta (ConsLayer (Layer w b a) rest) = ConsLayer (Layer (dmmap (* eta) w) (dvmap (* eta) b) a) (scaleLayers eta rest)
 
 backprop :: (KnownNat i, KnownNat o) => R i -> R o -> Layers i o -> GradCost o -> Layers i o
 backprop x y layers c' =
